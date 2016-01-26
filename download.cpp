@@ -156,7 +156,7 @@ void  download(int argc, char* argv[], bool debug, bool count, int &successes)
     char strHostName[HOST_NAME_SIZE];
     int nHostPort;
 
-    if(argc < 3)
+    if(argc < 4)
       {
         printf("\nUsage: download [-rc] host-name host-port url\n");
         exit(0);

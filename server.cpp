@@ -133,7 +133,7 @@ void GetHeaderLines(vector<char *> &headerLines, int skt, bool envformat)
             else
             {
                 line = (char *)malloc((strlen(tline) + 10) * sizeof(char));
-                sprintf(line, "HTTP_%s", tline);
+                sprintf(line, "%s", tline);
             }
         }
         //fprintf(stderr, "Header --> [%s]\n", line);
@@ -145,7 +145,7 @@ void GetHeaderLines(vector<char *> &headerLines, int skt, bool envformat)
     free(tline);
 }
 
-void readWrite(int hSocket, char pBuffer[]) {
+void readWrite(int hSocket, char pBuffer[], char* arg) {
     vector<char *> headerLines;
     char buffer[MAX_MSG_SZ];
     char contentType[MAX_MSG_SZ];
@@ -158,13 +158,7 @@ void readWrite(int hSocket, char pBuffer[]) {
         printf("%s\n",headerLines[i]);
     }
     printf("\n\n");
-//    /* number returned by read() and write() is the number of bytes
-//     ** read or written, with -1 being that an error occured
-//     ** write what we received back to the server */
-//    write(hSocket,pBuffer,strlen(pBuffer)+1);
-//    /* read from socket into buffer */
-//    memset(pBuffer,0,sizeof(pBuffer));
-//    read(hSocket,pBuffer,BUFFER_SIZE);
+    printf("You want \"%s\"\n\n", arg);
 }
 
 int main(int argc, char* argv[])
@@ -203,7 +197,7 @@ int main(int argc, char* argv[])
     Address.sin_port=htons(nHostPort);
     Address.sin_family=AF_INET;
 
-    printf("\nBinding to port %d",nHostPort);
+    printf("\nBinding to port %d\n",nHostPort);
 
     /* bind to a port */
     if(bind(hServerSocket,(struct sockaddr*)&Address,sizeof(Address)) 
@@ -216,17 +210,7 @@ int main(int argc, char* argv[])
     getsockname( hServerSocket, (struct sockaddr *) &Address,(socklen_t *)&nAddressSize);
     printf("opened socket as fd (%d) on port (%d) for stream i/o\n",hServerSocket, ntohs(Address.sin_port) );
 
-        printf("Server\n\
-              sin_family        = %d\n\
-              sin_addr.s_addr   = %d\n\
-              sin_port          = %d\n"
-              , Address.sin_family
-              , Address.sin_addr.s_addr
-              , ntohs(Address.sin_port)
-            );
-
-
-    printf("\nMaking a listen queue of %d elements",QUEUE_SIZE);
+    printf("\nMaking a listen queue of %d elements\n",QUEUE_SIZE);
     /* establish listen queue */
     if(listen(hServerSocket,QUEUE_SIZE) == SOCKET_ERROR)
     {
@@ -246,14 +230,8 @@ int main(int argc, char* argv[])
         printf("\nGot a connection from %X (%d)\n",
               Address.sin_addr.s_addr,
               ntohs(Address.sin_port));
-        strcpy(pBuffer,MESSAGE);
-        printf("\nSending \"%s\" to client",pBuffer);
-        readWrite(hSocket, pBuffer);
-
-        if(strcmp(pBuffer,MESSAGE) == 0)
-            printf("\nThe messages match");
-        else
-            printf("\nSomething was changed in the message");
+        
+        readWrite(hSocket, pBuffer, argv[2]);
 
         shutdown(hSocket, SHUT_RDWR);
 
