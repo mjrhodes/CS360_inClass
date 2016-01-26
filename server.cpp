@@ -6,13 +6,16 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <iostream>
 
 #define SOCKET_ERROR        -1
 #define BUFFER_SIZE         10000
 #define MESSAGE             "This is the message I'm sending back and forth"
 #define QUEUE_SIZE          5
 
-void readWrite(int hSocket, char &pBuffer) {
+using namespace std;
+
+void readWrite(int hSocket, char pBuffer[]) {
     /* number returned by read() and write() is the number of bytes
      ** read or written, with -1 being that an error occured
      ** write what we received back to the server */
