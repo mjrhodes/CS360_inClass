@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
+#include <vector>
 
 #define SOCKET_ERROR        -1
 #define BUFFER_SIZE         10000
