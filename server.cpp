@@ -12,6 +12,16 @@
 #define MESSAGE             "This is the message I'm sending back and forth"
 #define QUEUE_SIZE          5
 
+void readWrite(int socket, char &pBuffer) {
+    /* number returned by read() and write() is the number of bytes
+     ** read or written, with -1 being that an error occured
+     ** write what we received back to the server */
+    write(hSocket,pBuffer,strlen(pBuffer)+1);
+    /* read from socket into buffer */
+    memset(pBuffer,0,sizeof(pBuffer));
+    read(hSocket,pBuffer,BUFFER_SIZE);
+}
+
 int main(int argc, char* argv[])
 {
     int hSocket,hServerSocket;  /* handle to socket */
@@ -93,28 +103,22 @@ int main(int argc, char* argv[])
               ntohs(Address.sin_port));
         strcpy(pBuffer,MESSAGE);
         printf("\nSending \"%s\" to client",pBuffer);
-        /* number returned by read() and write() is the number of bytes
-        ** read or written, with -1 being that an error occured
-        ** write what we received back to the server */
-        write(hSocket,pBuffer,strlen(pBuffer)+1);
-        /* read from socket into buffer */
-        memset(pBuffer,0,sizeof(pBuffer));
-        read(hSocket,pBuffer,BUFFER_SIZE);
+        readWrite(hSocket, pBuffer);
 
         if(strcmp(pBuffer,MESSAGE) == 0)
             printf("\nThe messages match");
         else
             printf("\nSomething was changed in the message");
 
-    shutdown(hSocket, SHUT_RDWR);
+        shutdown(hSocket, SHUT_RDWR);
 
-    linger lin;
-    unsigned int y=sizeof(lin);
-    lin.l_onoff=1;
-    lin.l_linger=10;
-    setsockopt(hSocket,SOL_SOCKET, SO_LINGER,&lin,sizeof(lin));
+        linger lin;
+        unsigned int y=sizeof(lin);
+        lin.l_onoff=1;
+        lin.l_linger=10;
+        setsockopt(hSocket,SOL_SOCKET, SO_LINGER,&lin,sizeof(lin));
 
-    printf("\nClosing the socket");
+        printf("\nClosing the socket");
         /* close socket */
         if(close(hSocket) == SOCKET_ERROR)
         {
