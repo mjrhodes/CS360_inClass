@@ -12,7 +12,7 @@
 #define MESSAGE             "This is the message I'm sending back and forth"
 #define QUEUE_SIZE          5
 
-void readWrite(int socket, char &pBuffer) {
+void readWrite(int hSocket, char &pBuffer) {
     /* number returned by read() and write() is the number of bytes
      ** read or written, with -1 being that an error occured
      ** write what we received back to the server */
