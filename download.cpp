@@ -6,17 +6,17 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <vector>             // stl vector
+#include <fcntl.h>
+#include <sstream>
 #include <iostream>
-#include <vector>
 
 #define SOCKET_ERROR        -1
-#define BUFFER_SIZE         10000
-#define MESSAGE             "This is the message I'm sending back and forth"
-#define QUEUE_SIZE          5
-#define MAX_MSG_SZ          10000
+#define BUFFER_SIZE         100
+#define HOST_NAME_SIZE      255
+#define MAX_MSG_SZ      	1024
 
 using namespace std;
-
 
 // Determine if the character is whitespace
 bool isWhitespace(char c)
@@ -72,7 +72,7 @@ char * GetLine(int fds)
     //fprintf(stderr, "GetLine: [%s]\n", line);
     return line;
 }
-
+    
 // Change to upper case and replace with underlines for CGI scripts
 void UpcaseAndReplaceDashWithUnderline(char *str)
 {
@@ -118,7 +118,7 @@ void GetHeaderLines(vector<char *> &headerLines, int skt, bool envformat)
     tline = GetLine(skt);
     while(strlen(tline) != 0)
     {
-        if (strstr(tline, "Content-Length") ||
+        if (strstr(tline, "Content-Length") || 
             strstr(tline, "Content-Type"))
         {
             if (envformat)
@@ -133,7 +133,7 @@ void GetHeaderLines(vector<char *> &headerLines, int skt, bool envformat)
             else
             {
                 line = (char *)malloc((strlen(tline) + 10) * sizeof(char));
-                sprintf(line, "%s", tline);
+                sprintf(line, "%s", tline);                
             }
         }
         //fprintf(stderr, "Header --> [%s]\n", line);
@@ -145,108 +145,157 @@ void GetHeaderLines(vector<char *> &headerLines, int skt, bool envformat)
     free(tline);
 }
 
-void readWrite(int hSocket, char pBuffer[], char* arg) {
-    vector<char *> headerLines;
-    char buffer[MAX_MSG_SZ];
-    char contentType[MAX_MSG_SZ];
-    
-    // Read the header lines
-    GetHeaderLines(headerLines, hSocket , false);
-    
-    // Now print them out
-    for (int i = 0; i < headerLines.size(); i++) {
-        printf("%s\n",headerLines[i]);
-    }
-    printf("\n\n");
-    printf("You want \"%s\"\n\n", arg);
-}
-
-int main(int argc, char* argv[])
+void  download(int argc, char* argv[], bool debug, bool count, int &successes)
 {
-    int hSocket,hServerSocket;  /* handle to socket */
+    int hSocket;                 /* handle to socket */
     struct hostent* pHostInfo;   /* holds info about a machine */
-    struct sockaddr_in Address; /* Internet socket address stuct */
-    int nAddressSize=sizeof(struct sockaddr_in);
+    struct sockaddr_in Address;  /* Internet socket address stuct */
+    long nHostAddress;
     char pBuffer[BUFFER_SIZE];
+    unsigned nReadAmount;
+    char strHostName[HOST_NAME_SIZE];
     int nHostPort;
 
-    if(argc < 3)
+    if(argc < 4)
       {
-        printf("\nUsage: server host-port dir\n");
-        return 0;
+        printf("\nUsage: download [-rc] host-name host-port url\n");
+        exit(0);
       }
     else
       {
-        nHostPort=atoi(argv[1]);
+      	if(argc > 5) {
+			strcpy(strHostName,argv[3]);
+			nHostPort=atoi(argv[4]);
+      	}
+      	else if(argc > 4) {
+			strcpy(strHostName,argv[2]);
+			nHostPort=atoi(argv[3]);
+        } else {
+        	strcpy(strHostName,argv[1]);
+			nHostPort=atoi(argv[2]);
+		}
       }
 
-    printf("\nStarting server");
-
-    printf("\nMaking socket");
     /* make a socket */
-    hServerSocket=socket(AF_INET,SOCK_STREAM,0);
+    hSocket=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
 
-    if(hServerSocket == SOCKET_ERROR)
+    if(hSocket == SOCKET_ERROR)
     {
         printf("\nCould not make a socket\n");
-        return 0;
+        exit(0);
     }
 
+    /* get IP address from name */
+    pHostInfo=gethostbyname(strHostName);
+    /* copy address into long */
+    memcpy(&nHostAddress,pHostInfo->h_addr,pHostInfo->h_length);
+
     /* fill address struct */
-    Address.sin_addr.s_addr=INADDR_ANY;
+    Address.sin_addr.s_addr=nHostAddress;
     Address.sin_port=htons(nHostPort);
     Address.sin_family=AF_INET;
 
-    printf("\nBinding to port %d\n",nHostPort);
-
-    /* bind to a port */
-    if(bind(hServerSocket,(struct sockaddr*)&Address,sizeof(Address)) 
-                        == SOCKET_ERROR)
+    /* connect to host */
+    int connectValue = connect(hSocket,(struct sockaddr*)&Address,sizeof(Address));
+    if(connectValue == SOCKET_ERROR)
     {
         printf("\nCould not connect to host\n");
-        return 0;
+        exit(0);
     }
- /*  get port number */
-    getsockname( hServerSocket, (struct sockaddr *) &Address,(socklen_t *)&nAddressSize);
-    printf("opened socket as fd (%d) on port (%d) for stream i/o\n",hServerSocket, ntohs(Address.sin_port) );
+    
+    char *message = (char *)malloc(MAX_MSG_SZ);
+    if(argc > 5) {
+    	sprintf(message, "GET %s HTTP/1.1\r\nHOST:%s:%s\r\n\r\n",argv[5],argv[3],argv[4]);
+    } else if(argc > 4) {
+    	sprintf(message, "GET %s HTTP/1.1\r\nHOST:%s:%s\r\n\r\n",argv[4],argv[2],argv[3]);
+    } else {
+		sprintf(message, "GET %s HTTP/1.1\r\nHOST:%s:%s\r\n\r\n",argv[3],argv[1],argv[2]);
+    }
+    if(!count) {
+    	printf("\n");
+    }
+    write(hSocket,message,strlen(message));
+    memset(pBuffer, 0, BUFFER_SIZE);
+	
+	vector<char *> headerLines;
+	char buffer[MAX_MSG_SZ];
+	char contentType[MAX_MSG_SZ];
+	
+	// First read the status line
+	char *startline = GetLine(hSocket);
+	string code = startline;
+	if(code == "HTTP/1.1 200 OK") {
+		successes++;
+	}
 
-    printf("\nMaking a listen queue of %d elements\n",QUEUE_SIZE);
-    /* establish listen queue */
-    if(listen(hServerSocket,QUEUE_SIZE) == SOCKET_ERROR)
+	// Read the header lines
+	GetHeaderLines(headerLines, hSocket , false);
+
+	// Now print them out
+	if(debug && !count) {
+		printf("%s\n",startline);
+		for (int i = 0; i < headerLines.size(); i++) {
+			printf("%s\n",headerLines[i]);
+			if(strstr(headerLines[i], "Content-Type")) {
+					 sscanf(headerLines[i], "Content-Type: %s", contentType);
+			}
+		}
+		printf("\n\n");
+	}
+
+	// Now read and print the rest of the file
+	if(!count) {
+		int rval;
+		while((rval = read(hSocket,buffer,MAX_MSG_SZ)) > 0) {
+			write(1,buffer,rval);
+		}
+	}
+   
+    /* close socket */                       
+    if(close(hSocket) == SOCKET_ERROR)
     {
-        printf("\nCould not listen\n");
-        return 0;
+        printf("\nCould not close socket\n");
+        exit(0);
     }
+    free(message);
+}
 
-    int optval = 1;
-    setsockopt (hServerSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
-
-    for(;;)
-    {
-        printf("\nWaiting for a connection\n");
-        /* get the connected socket */
-        hSocket=accept(hServerSocket,(struct sockaddr*)&Address,(socklen_t *)&nAddressSize);
-
-        printf("\nGot a connection from %X (%d)\n",
-              Address.sin_addr.s_addr,
-              ntohs(Address.sin_port));
-        
-        readWrite(hSocket, pBuffer, argv[2]);
-
-        shutdown(hSocket, SHUT_RDWR);
-
-        linger lin;
-        unsigned int y=sizeof(lin);
-        lin.l_onoff=1;
-        lin.l_linger=10;
-        setsockopt(hSocket,SOL_SOCKET, SO_LINGER,&lin,sizeof(lin));
-
-        printf("\nClosing the socket");
-        /* close socket */
-        if(close(hSocket) == SOCKET_ERROR)
-        {
-         printf("\nCould not close socket\n");
-         return 0;
-        }
-    }
+int  main(int argc, char* argv[])
+{
+	int c;
+	bool debug = false;
+	bool count = false;
+	int countValue = 1;
+	int successes = 0;
+	
+	while ((c = getopt (argc, argv, "dc:")) != -1) {
+		switch (c) {
+			case 'd':
+			debug = true;
+			break;
+			case 'c':
+			count = true;
+			countValue = atoi(optarg);
+			break;
+			case '?':
+			if (optopt == 'c')
+          		fprintf (stderr, "Option -%c requires an argument.\n", optopt);
+        	else if (isprint (optopt))
+				fprintf (stderr, "Unknown option `-%c'.\n", optopt);
+			else
+				fprintf (stderr,
+					   "Unknown option character `\\x%x'.\n",
+					   optopt);
+				return 1;
+			default:
+				abort ();
+		}
+	}
+	for(int i = 0; i < countValue; i++) {
+		download(argc, argv, debug, count, successes);
+	}
+	if(count) {
+		printf("Succeeded %d times\n", successes);
+	}
+	return 0;
 }
