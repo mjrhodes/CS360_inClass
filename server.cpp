@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -8,6 +9,10 @@
 #include <stdlib.h>
 #include <iostream>
 #include <vector>
+#include <sstream>
+#include <ctype.h>
+#include <dirent.h>
+#include <fstream>
 
 #define SOCKET_ERROR        -1
 #define BUFFER_SIZE         10000
@@ -145,6 +150,118 @@ void GetHeaderLines(vector<char *> &headerLines, int skt, bool envformat)
     free(tline);
 }
 
+int determineType(string arg) {
+    int i = arg.size() - 1;
+    stringstream ss;
+    while (arg[i] != '.') {
+        i--;
+    }
+    string extention = arg.substr(i);
+    if (extention == ".html") {
+        return 1;
+    } else if (extention == ".jpg") {
+        return 2;
+    } else if (extention == ".gif") {
+        return 3;
+    } else {
+        return 0;
+    }
+}
+
+void fileDir(int hSocket, string arg) {
+    struct stat filestat;
+    string header;
+    string body;
+    stringstream ss;
+    stringstream body_ss;
+    
+    if(stat(arg.c_str(), &filestat)) {
+        cout <<"ERROR in stat\n";
+        header = "HTTP/1.0 404 Not Found\r\n\r\n";
+        write(hSocket, header.c_str(), strlen(header.c_str())+1);
+        return;
+    }
+    if(S_ISREG(filestat.st_mode)) {
+        int typeCode = determineType(arg);
+        ss << "HTTP/1.0 200 OK\r\n";
+        switch (typeCode) {
+            case 0:
+                ss << "Content-Type: text/plain\r\n";
+                break;
+            case 1:
+                ss << "Content-Type: text/html\r\n";
+                break;
+            case 2:
+                ss << "Content-Length: " << filestat.st_size << "\r\n";
+                ss << "Content-Type: image/jpeg\r\n";
+                break;
+            case 3:
+                ss << "Content-Length: " << filestat.st_size << "\r\n";
+                ss << "Content-Type: image/gif\r\n";
+                break;
+        }
+        ss << "\r\n";
+        header = ss.str();
+        cout << endl << header << endl;
+        write(hSocket, header.c_str(), strlen(header.c_str())+1);
+        
+        if (typeCode == 2 || typeCode == 3) {
+            FILE *fp = fopen(arg.c_str(),"rb");
+            char *buffer = (char *)malloc(filestat.st_size+1);
+            fread(buffer, filestat.st_size, 1,fp);
+            write(hSocket,buffer,filestat.st_size);
+            free(buffer);
+            fclose(fp);
+        } else {
+            FILE *fp = fopen(arg.c_str(),"r");
+            char *buffer = (char *)malloc(filestat.st_size+1);
+            fread(buffer, filestat.st_size, 1, fp);
+            write(hSocket, buffer, filestat.st_size);
+            free(buffer);
+            fclose(fp);
+        }
+    }
+    if(S_ISDIR(filestat.st_mode)) {
+        header = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n";
+        write(hSocket, header.c_str(), strlen(header.c_str())+1);
+        DIR *dirp;
+        struct dirent *dp;
+        
+        dirp = opendir(arg.c_str());
+        string directoryListing;
+        stringstream ss;
+        
+        ss << "<html>\n<body>\n<ul>\n";
+        
+        bool hasIndex = false;
+        stringstream name;
+        while ((dp = readdir(dirp)) != NULL) {
+            ss << "<li>" << dp->d_name << "</li>\n";
+            name << dp->d_name;
+            printf("name %s\n", dp->d_name);
+            if (name.str() == "index.html") {
+                hasIndex = true;
+            }
+            name.str("");
+        }
+        ss << "</ul>\n</body>\n</html>";
+        directoryListing = ss.str();
+        cout << directoryListing << "\n\n";
+        if (hasIndex) {
+            string newPath = arg + "/index.html";
+            FILE *fp = fopen(newPath.c_str(),"r");
+            char *buffer = (char *)malloc(filestat.st_size+1);
+            fread(buffer, filestat.st_size, 1, fp);
+            write(hSocket, buffer, filestat.st_size);
+            free(buffer);
+            fclose(fp);
+        } else {
+            write(hSocket, directoryListing.c_str(), strlen(directoryListing.c_str())+1);
+        }
+        (void)closedir(dirp);
+    }
+}
+
 void readWrite(int hSocket, char pBuffer[], char* arg) {
     vector<char *> headerLines;
     char buffer[MAX_MSG_SZ];
@@ -157,8 +274,13 @@ void readWrite(int hSocket, char pBuffer[], char* arg) {
     for (int i = 0; i < headerLines.size(); i++) {
         printf("%s\n",headerLines[i]);
     }
-    printf("\n\n");
-    printf("You want \"%s\"\n\n", arg);
+    
+    stringstream ss;
+    ss << arg;
+    for (int i = 4; !isspace(headerLines[0][i]); i++) {
+        ss << headerLines[0][i];
+    }
+    fileDir(hSocket, ss.str());
 }
 
 int main(int argc, char* argv[])
@@ -179,6 +301,7 @@ int main(int argc, char* argv[])
       {
         nHostPort=atoi(argv[1]);
       }
+    string path = argv[2];
 
     printf("\nStarting server");
 
@@ -232,14 +355,14 @@ int main(int argc, char* argv[])
               ntohs(Address.sin_port));
         
         readWrite(hSocket, pBuffer, argv[2]);
-
-        shutdown(hSocket, SHUT_RDWR);
-
+        
         linger lin;
         unsigned int y=sizeof(lin);
         lin.l_onoff=1;
         lin.l_linger=10;
         setsockopt(hSocket,SOL_SOCKET, SO_LINGER,&lin,sizeof(lin));
+        
+        shutdown(hSocket, SHUT_RDWR);
 
         printf("\nClosing the socket");
         /* close socket */
